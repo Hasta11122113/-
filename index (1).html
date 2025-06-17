@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>小植怡情監測平台</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background-color: #f7f7f7;
+    }
+    .container {
+      margin: 20px auto;
+      max-width: 1200px;
+    }
+    canvas {
+      width: 1000px;
+      height: 500px;
+      margin: 0 auto 40px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>小植怡情監測平台</h1>
+    <p>頻道 A ID：2941500</p>
+    <p>頻道 B ID：2991532</p>
+    <p>最新土壤濕度：<span id="latest-humidity">載入中...</span> %</p>
+    <p>最新土壤溫度：<span id="latest-temperature">載入中...</span> °C</p>
+    <p>最新光強度：<span id="latest-light">載入中...</span> lux</p>
+    <canvas id="humidityChart"></canvas>
+    <canvas id="temperatureChart"></canvas>
+  </div>
+
+  <script>
+    const channelAId = "2941500";
+    const humidityFieldA = 1;
+    const temperatureFieldA = 2;
+
+    const channelBId = "2991532";
+    const lightFieldB = 1;
+
+    const maxDataPoints = 20;
+    const fetchInterval = 15000; // 每 15 秒更新一次
+
+    // 濕度圖表設定
+    const humidityChartConfig = {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: "土壤濕度 (%)",
+          data: [],
+          borderColor: 'rgba(255, 99, 132, 1)',
+          backgroundColor: 'rgba(255, 99, 132, 0.2)',
+          borderWidth: 2,
+          tension: 0.4,
+          fill: false
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { title: { display: true, text: '時間' } },
+          y: {
+            title: { display: true, text: '濕度 (%)' },
+            beginAtZero: true,
+            max: 100
+          }
+        }
+      }
+    };
+
+    // 溫度圖表設定
+    const temperatureChartConfig = {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: "土壤溫度 (°C)",
+          data: [],
+          borderColor: 'rgba(54, 162, 235, 1)',
+          backgroundColor: 'rgba(54, 162, 235, 0.2)',
+          borderWidth: 2,
+          tension: 0.4,
+          fill: false
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { title: { display: true, text: '時間' } },
+          y: {
+            title: { display: true, text: '溫度 (°C)' },
+            beginAtZero: true,
+            suggestedMax: 50
+          }
+        }
+      }
+    };
+
+    const humidityChart = new Chart(document.getElementById('humidityChart'), humidityChartConfig);
+    const temperatureChart = new Chart(document.getElementById('temperatureChart'), temperatureChartConfig);
+
+    async function fetchThingSpeakData() {
+      try {
+        const urlA = `https://api.thingspeak.com/channels/${channelAId}/feeds.json?results=${maxDataPoints}`;
+        const urlB = `https://api.thingspeak.com/channels/${channelBId}/feeds.json?results=1`;
+
+        const [resA, resB] = await Promise.all([
+          fetch(urlA).then(r => r.json()),
+          fetch(urlB).then(r => r.json())
+        ]);
+
+        const feedsA = resA.feeds;
+        const labels = [], humidity = [], temperature = [];
+
+        feedsA.forEach(feed => {
+          const time = new Date(feed.created_at);
+          const formatted = time.toLocaleTimeString('zh-Hant', { hour: '2-digit', minute: '2-digit' });
+          const hum = parseFloat(feed[`field${humidityFieldA}`]);
+          const temp = parseFloat(feed[`field${temperatureFieldA}`]);
+          labels.push(formatted);
+          humidity.push(isNaN(hum) ? null : hum);
+          temperature.push(isNaN(temp) ? null : temp);
+        });
+
+        humidityChartConfig.data.labels = labels;
+        humidityChartConfig.data.datasets[0].data = humidity;
+        humidityChart.update();
+
+        temperatureChartConfig.data.labels = labels;
+        temperatureChartConfig.data.datasets[0].data = temperature;
+        temperatureChart.update();
+
+        // 顯示最新數值
+        document.getElementById("latest-humidity").innerText = humidity[humidity.length - 1] ?? "無效";
+        document.getElementById("latest-temperature").innerText = temperature[temperature.length - 1] ?? "無效";
+
+        // 頻道 B 最新光強度
+        const feedB = resB.feeds[0];
+        if (feedB) {
+          const light = parseFloat(feedB[`field${lightFieldB}`]);
+          document.getElementById("latest-light").innerText = !isNaN(light) ? light : "無效";
+        }
+      } catch (err) {
+        console.error("抓取資料錯誤：", err);
+      }
+    }
+
+    // 初始化
+    document.addEventListener("DOMContentLoaded", () => {
+      fetchThingSpeakData();
+      setInterval(fetchThingSpeakData, fetchInterval);
+    });
+  </script>
+</body>
+</html>
